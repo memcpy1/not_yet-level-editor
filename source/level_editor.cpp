@@ -77,9 +77,8 @@ private:
 
 public:
     Platform(const Vector2Di& center, const int& type = PlatformType::STATIC)
-        : Width(40), Height(40), Type(type), ID(CreatePlatformID()), Selected(0) 
+        : StartPos({center.x - 20, center.y - 20}), Width(40), Height(40), Type(type), ID(CreatePlatformID()), Selected(0) 
     {
-        StartPos = {center.x - 20, center.y - 20};
         SDLVerteces.push_back(SDL_Point(center.x - 20, center.y - 20));
         SDLVerteces.push_back(SDL_Point(center.x - 20, center.y + 20));
         SDLVerteces.push_back(SDL_Point(center.x + 20, center.y + 20));
@@ -182,28 +181,57 @@ public:
             }
         }
     }
-};
 
-Platform MergeIntoRect(Platform* selectedPlatforms, const int& nPlatforms, Stage& stage)
-{
-    Vector2Di StartPosition;
-    int Width = 0;
-    int Height = 0;
-    StartPosition.x = selectedPlatforms[0].GetStartPos().x;
-    StartPosition.y = selectedPlatforms[0].GetStartPos().y;
-    for (int i = 0; i < nPlatforms; i++)
+    void DeletePlatforms(const std::vector<Platform>& platformList)
     {
-        if (selectedPlatforms[i].GetStartPos().x < StartPosition.x)
-            StartPosition.x = selectedPlatforms[i].GetStartPos().x;
-        if (selectedPlatforms[i].GetStartPos().y < StartPosition.y)
-            StartPosition.y = selectedPlatforms[i].GetStartPos().y;
-
-        Width += selectedPlatforms[i].GetWidth();
-        Height += selectedPlatforms[i].GetHeight();
+        for (int i = 0; i < Platforms.size(); i++)
+        {
+            for (int j = 0; j < platformList.size(); j++)
+            {
+                if (platformList[j] == Platforms[i])
+                {
+                    auto it = std::find(Platforms.begin(), Platforms.end(), Platforms[i]);
+                    Platforms.erase(it);
+                }
+                    
+            }
+        }
     }
-    
-    return Platform(StartPosition, Width, Height);
-}
+
+    void MergeSelectedIntoRect()
+    {
+        std::vector<Platform> Selected;
+        Vector2Di StartPosition = {0};
+        int Width = 0;
+        int Height = 0;
+        
+        for (int i = 0; i < Platforms.size(); i++)
+        {
+            if (Platforms[i].isSelected())
+                Selected.push_back(Platforms[i]);
+        }
+
+        
+
+        StartPosition.x = Selected[0].GetStartPos().x;
+        StartPosition.y = Selected[0].GetStartPos().y;
+
+        for (int i = 0; i < Selected.size(); i++)
+        {
+            if (Selected[i].GetStartPos().x < StartPosition.x)
+                StartPosition.x = Selected[i].GetStartPos().x;
+            if (Selected[i].GetStartPos().y < StartPosition.y)
+                StartPosition.y = Selected[i].GetStartPos().y;
+
+            Width += Selected[i].GetWidth();
+            Height += Selected[i].GetHeight();
+        }
+
+        
+        AddPlatform(Platform(StartPosition, Width / 2, Height / 2));
+        DeleteSelectedPlatforms(); //Vector out of subscript
+    }
+};
 
 int main()
 {
@@ -288,10 +316,8 @@ int main()
             stage.DeleteSelectedPlatforms();
 
         if (Keyboard[SDL_SCANCODE_M])
-        {
-            stage.DeleteSelectedPlatforms();
-            stage.AddPlatform(MergeIntoRect(SelectedPlatforms.data(), SelectedPlatforms.size(), stage));
-        }
+            stage.MergeSelectedIntoRect();
+        
 
         SDL_SetRenderDrawColor(Renderer, 25, 25, 25, 255);
         SDL_RenderClear(Renderer);
