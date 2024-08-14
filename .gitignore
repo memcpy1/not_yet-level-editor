@@ -1,3 +1,5 @@
 .vscode/
 build/
 res/
+SDL/
+SDL_ttf/
