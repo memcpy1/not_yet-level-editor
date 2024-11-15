@@ -1,16 +1,18 @@
 //SDL
-#include "SDL_render.h"
-#include "SDL_scancode.h"
-#include "SDL_video.h"
 #include <SDL.h>
+#include <SDL_ttf.h>
+#undef main
 //STL
 #include <cmath>
+#include <string>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <vector>
 #include <algorithm>
 //vendor
 #include <SDL_prims.h>
-#undef main
+
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
@@ -30,8 +32,8 @@ struct Vector2Di
 
 enum Material
 {
-    NOT_YET = 0,
-    STONE = 1,
+    MAIN = 0,
+    KILL = 1,
     GLASS = 2,
     CLOUD = 3
 };
@@ -87,6 +89,32 @@ std::size_t CreatePlatformID()
     return Entities;
 }
 
+void RenderText(SDL_Renderer* renderer, const std::string& text, const Vector2Di& position, TTF_Font* font, const SDL_Color& color)
+{
+    SDL_Surface* Surface = TTF_RenderText_Solid(font, text.c_str(), color);
+    SDL_Texture* Texture;
+    SDL_Rect TextArea;
+
+    if(Surface)
+    {
+        Texture = SDL_CreateTextureFromSurface(renderer, Surface);
+        if(Texture)
+        {
+            TextArea.x = position.x;
+            TextArea.y = position.y;
+            TextArea.w = Surface->w;
+            TextArea.h = Surface->h;
+        }
+        else
+            printf( "SDL Error: %s\n", SDL_GetError() );
+    }
+    else
+        printf( "SDL_ttf Error: %s\n", TTF_GetError());
+
+    SDL_RenderCopy(renderer, Texture, 0, &TextArea); 
+    SDL_DestroyTexture(Texture);
+}
+
 class Platform
 {
 private:  
@@ -101,7 +129,7 @@ private:
 
 public:
     Platform(const Vector2Di& center, const int& type = PlatformType::STATIC)
-        : StartPos({center.x - 20, center.y - 20}), Width(40), Height(40), Type(type), ID(CreatePlatformID()), Selected(0), Mat(Material::NOT_YET)
+        : StartPos({center.x - 20, center.y - 20}), Width(40), Height(40), Type(type), ID(CreatePlatformID()), Selected(0), Mat(Material::MAIN)
     {
         SDLVerteces.push_back(SDL_Point(center.x - 20, center.y - 20));
         SDLVerteces.push_back(SDL_Point(center.x - 20, center.y + 20));
@@ -123,8 +151,8 @@ public:
         SDLVerteces.push_back(SDL_Point(startPos.x, startPos.y + height));
     }
 
-    Platform(const std::vector<SDL_Point>& verteces, const int& type = PlatformType::STATIC)
-        : Selected(0), ID(CreatePlatformID()), Type(type)
+    Platform(const std::vector<SDL_Point>& verteces, const int& type = PlatformType::STATIC, const Material& mat = Material::MAIN)
+        : Selected(0), ID(CreatePlatformID()), Type(type), Mat(mat)
     {
         Vector2Di UpperBound = Vector2Di(verteces[0].x, verteces[0].y);
         Vector2Di LowerBound = Vector2Di(verteces[0].x, verteces[0].y);
@@ -221,66 +249,50 @@ public:
 
 struct Box2DPlatform
 {
-    Vector2D* Verteces;
-    Vector2D Position;
-    std::vector<Vector2D> Box2DVerteces;
     unsigned int nVerteces;
+    Vector2D* Verteces;
     unsigned int Type;
-    float Width;
-    float Height;
-    Material Mat;
+    unsigned int Mat;
 
     Box2DPlatform(Platform& platform)
     {
         std::vector<SDL_Point> SDLVerteces = platform.GetVerteces();
         //[!] There is no check being done to ensure that the verteces are counter-clockwise! [!]
         Type = platform.GetType();
-        
-
+    
         nVerteces = SDLVerteces.size();
-        if (SDLVerteces.size() == 4)
-        {
-            Verteces = nullptr;
-            int PosX = (SDLVerteces[0].x + SDLVerteces[3].x) / 2;
-            int PosY = (SDLVerteces[0].y + SDLVerteces[1].y) / 2;
-            Position = SDLBox2D(Vector2D(PosX, PosY));
-            Width = SDLBox2Df(Dist({SDLVerteces[0].x, SDLVerteces[0].y}, {SDLVerteces[3].x, SDLVerteces[3].y}));
-            Height = SDLBox2Df(Dist({SDLVerteces[0].x, SDLVerteces[0].y}, {SDLVerteces[1].x, SDLVerteces[1].y}));
-        }
+        Verteces = new Vector2D[nVerteces];
         
-        else
-        {
-            for (int i = 0; i < SDLVerteces.size(); ++i)
-                Box2DVerteces.push_back(SDLBox2D({(float)SDLVerteces[i].x, (float)SDLVerteces[i].y}));
-        
-            Verteces = Box2DVerteces.data();
-        }
-        
+        for (int i = 0; i < SDLVerteces.size(); ++i)
+            Verteces[i] = SDLBox2D({(float)SDLVerteces[i].x, (float)SDLVerteces[i].y});
         
         Mat = platform.GetMaterial();
+    }
+
+    ~Box2DPlatform()
+    {
     }
 };
 
 struct Screen
 {
     Vector2D StartPosition;
-    Box2DPlatform* Platforms; //[!]First platform is always an anchor[!]
+    unsigned int nPlatforms;
+    Box2DPlatform* Platforms;
     //Track Music;
     //Background Background;
-
-    Screen(const Vector2D& startPos, Box2DPlatform* platforms)
-        : StartPosition(startPos), Platforms(platforms) {}
 };
 
 class Stage
 {
 public:
     std::vector<Platform> Platforms;
-    Vector2Di StartPosition;
+    std::vector<Box2DPlatform> Box2DPlatforms;
     std::vector<SDL_Point> EdgeQueue;
-    
     std::vector<Screen> StageData;
-public:
+    Vector2Di StartPosition;
+    unsigned int ScreensExported = 0;
+
     void AddPlatform(const Platform& platform)
     {
         Platforms.push_back(platform);
@@ -325,6 +337,14 @@ public:
         std::cout << "[INFO] Vec2 at x: " << vec2.x << " and y: " << vec2.y << " added to queue" << '\n';
     }
 
+    void RenderPlatforms(SDL_Renderer* renderer)
+    {
+        for (int i = 0; i < Platforms.size(); i++)
+        {
+            Platforms[i].Render(renderer);
+        }
+    }
+
     void RenderEdges(SDL_Renderer* renderer)
     {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -336,43 +356,119 @@ public:
     {
         std::cout << "Exporting Level Geometry..." << '\n';
         
-        std::vector<Box2DPlatform> PlatformsToExport;
-
-        std::cout << "[INFO] Exporting " << Platforms.size() << " Platforms" << '\n';
-        for (int i = 0; i < Platforms.size(); ++i)
+        Vector2D StartPos = {StartPosition.x, StartPosition.y};
+        const unsigned int nPlatforms = Platforms.size();
+        for (int i = 0; i < nPlatforms; i++)
         {
-            PlatformsToExport.push_back(Box2DPlatform(Platforms[i]));
-            std::cout << "Platform " << i + 1 << "->" << '\n';
-            if (PlatformsToExport[i].nVerteces == 4)
-                std::cout << "Rectangle : " <<  PlatformsToExport[i].Position.x << " | " << PlatformsToExport[i].Position.y << '\n';
-            else
-                for (int j = 0; j < PlatformsToExport[i].nVerteces; ++j)
-                {
-                    std::cout << "Convex Hull : " << PlatformsToExport[i].Verteces[j].x << " | " << PlatformsToExport[i].Verteces[j].y << '\n';
-                }
-        } 
-
-        for (int i = 0; i < PlatformsToExport.size(); ++i)
-            {
-                if (PlatformsToExport[i].Type == PlatformType::ANCHOR) 
-                {
-                    for (auto it = PlatformsToExport.begin(), lim = PlatformsToExport.end(); it != lim; ++it) 
-                    {
-                        if (it->Type == PlatformType::ANCHOR) 
-                            std::rotate(PlatformsToExport.begin(), it, it + 1);
-                    }
-                }   
-            }
-
-        StageData.push_back(Screen(SDLBox2D({(float)StartPosition.x, (float)StartPosition.y}), PlatformsToExport.data()));
-
+            Box2DPlatforms.push_back(Box2DPlatform(Platforms[i]));
+        }
+        
+        Screen screen;
+        screen.nPlatforms = nPlatforms;
+        screen.StartPosition = StartPos;
+        screen.Platforms = Box2DPlatforms.data();
+        StageData.push_back(screen);
+        
+        ScreensExported++;
         Platforms.clear();
-        EdgeQueue.clear();
+        StartPosition = {0};
     }
 
     void ExportToFile()
     {
+        static int Level = 0;
+        ++Level;
+        std::string Filename = "Level_";
+        Filename += std::to_string(Level);
+        std::fstream Stage;
+        Stage.open(Filename + ".bin", std::ios::out | std::ios::binary);
 
+        unsigned int nScreen = StageData.size();
+
+        Stage.write((char*)&nScreen, sizeof(unsigned int));
+        for (int i = 0; i < StageData.size(); i++)
+        {
+            Stage.write((char*)&StageData[i].StartPosition, sizeof(Vector2D));
+            Stage.write((char*)&StageData[i].nPlatforms, sizeof(unsigned int));
+            for (int j = 0; j < StageData[i].nPlatforms; j++)
+            {
+                Stage.write((char*)&StageData[i].Platforms[j].nVerteces, sizeof(unsigned int));
+                for(int l = 0; l < StageData[i].Platforms[j].nVerteces; l++)
+                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l], sizeof(Vector2D));
+                Stage.write((char*)&StageData[i].Platforms[j].Type, sizeof(unsigned int));
+                Stage.write((char*)&StageData[i].Platforms[j].Mat, sizeof(unsigned int));
+            }
+            
+        }
+   
+        Stage.close();
+        StageData.clear();
+        ScreensExported = 0;
+        if (Stage.good())
+            std::cout << "Level data exported succesfully" << '\n';
+    }
+
+/*
+    Vector2D StartPosition;
+    Box2DPlatform* Platforms;
+    unsigned int nPlatforms;
+
+    Vector2D* Verteces;
+    unsigned int nVerteces;
+    unsigned int Type;
+    unsigned int Mat;
+
+    Vector2D Vectors!
+*/
+ 
+    void ExportToFileTest()
+    {
+        std::fstream Stage;
+        Stage.open("Level_1.bin", std::ios::in | std::ios::binary);
+
+        unsigned int N;
+        Stage.read((char*)&N, sizeof(unsigned int));
+        std::cout << N <<'\n';
+        Screen* ImportedScreens = new Screen[N];
+
+        for (int i = 0; i < N; i++)
+        {
+            Stage.read((char*)&ImportedScreens[i].StartPosition, sizeof(Vector2D));
+            std::cout << ImportedScreens[i].StartPosition.x << " | " << ImportedScreens[i].StartPosition.y << '\n';
+            Stage.read((char*)&ImportedScreens[i].nPlatforms, sizeof(unsigned int));
+            std::cout << ImportedScreens[i].nPlatforms << '\n';
+            
+            for (int j = 0; j < ImportedScreens[i].nPlatforms; j++)
+            {
+                Stage.read((char*)&ImportedScreens[i].Platforms[j].nVerteces, sizeof(unsigned int)); //out of bounds
+                for (int l = 0; l < ImportedScreens[i].Platforms[j].nVerteces; l++)
+                    Stage.read((char*)&ImportedScreens[i].Platforms[j].Verteces[l], sizeof(Vector2D));
+                Stage.read((char*)&ImportedScreens[i].Platforms[j].Type, sizeof(unsigned int));
+                Stage.read((char*)&ImportedScreens[i].Platforms[j].Mat, sizeof(unsigned int));
+            }
+        }        
+
+        for (int i = 0; i < N; i++)
+        {
+            std::cout << ImportedScreens[i].StartPosition.x << " | " << ImportedScreens[i].StartPosition.y << '\n';
+            std::cout << ImportedScreens[i].nPlatforms << '\n';
+
+            for (int j = 0; j < ImportedScreens[i].nPlatforms; j++)
+            {
+                std::cout << ImportedScreens[i].Platforms[j].nVerteces << '\n';
+                for (int l = 0; l < ImportedScreens[i].Platforms[j].nVerteces; l++)
+                    std::cout << ImportedScreens[i].Platforms[j].Verteces[l].x << " | " << ImportedScreens[i].Platforms[j].Verteces[j].y << '\n';
+                std::cout << ImportedScreens[i].Platforms[j].Type << '\n';
+                std::cout << ImportedScreens[i].Platforms[j].Mat << '\n';
+            }
+        }
+    
+        Stage.close();
+    }
+
+    unsigned int GetScreensExported()
+    {
+        return ScreensExported;
     }
 };
 
@@ -387,6 +483,12 @@ int main()
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0)
     {
         std::cout << "[SDL2]: SDL_Init() failed   : " << SDL_GetError() << '\n';
+        return 0;
+    }
+
+    if (TTF_Init() < 0)
+    {
+        std::cout << "[SDL_ttf]: TTF_Init() failed   : " << TTF_GetError() << '\n';
         return 0;
     }
 
@@ -410,7 +512,10 @@ int main()
     SDL_Event e;
     bool quit = 0;
     const uint8_t* Keyboard = SDL_GetKeyboardState(0);
-    std::vector<Platform> SelectedPlatforms;
+    
+    TTF_Font* MonoFont = TTF_OpenFont("../../res/FreeMono.ttf", 15);
+    if (!MonoFont)
+        std::cout << "[SDL_ttf] TTF_OpenFont() failed   : " << TTF_GetError() << '\n';
 
     while (!quit + SDL_PollEvent(&e))
     {
@@ -492,10 +597,21 @@ int main()
             }
         }
 
+        else if (Keyboard[SDL_SCANCODE_R] && Keyboard[SDL_SCANCODE_LSHIFT])
+        {
+            if (!stage.StageData.empty())
+            stage.ExportToFile();
+        }
+
         else if (Keyboard[SDL_SCANCODE_E])
         {
             if (!stage.Platforms.empty())
                 stage.ExportScreen();
+        }
+
+        else if (Keyboard[SDL_SCANCODE_T])
+        {
+            stage.ExportToFileTest();
         }
             
             
@@ -506,11 +622,15 @@ int main()
         DrawGridline(40, Renderer);
         DrawCartesianAxis(Renderer);        
 
-        for (int i = 0; stage.Platforms.size() > i; i++)
-        {
-            stage.Platforms[i].Render(Renderer);
-        }
+        std::stringstream info;
+        
 
+        info << "Screens exported: " << stage.GetScreensExported();
+        RenderText(Renderer, "not_yet Level Editor", {10, 10}, MonoFont, SDL_Color(255, 255, 255, 150));
+        RenderText(Renderer, info.str().c_str(), {10, 22}, MonoFont, SDL_Color(255, 255, 255, 150));
+        //RenderText(Renderer, , {10, 20}, MonoFont, SDL_Color(255, 255, 255, 150));
+        
+        stage.RenderPlatforms(Renderer);
         stage.RenderEdges(Renderer);
         SDL_RenderPresent(Renderer);
     }
