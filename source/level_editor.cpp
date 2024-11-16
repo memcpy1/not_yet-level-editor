@@ -269,6 +269,9 @@ struct Box2DPlatform
         Mat = platform.GetMaterial();
     }
 
+    Box2DPlatform()
+        : nVerteces(0), Verteces(nullptr), Type(0), Mat(0) {}
+  
     ~Box2DPlatform()
     {
     }
@@ -365,7 +368,7 @@ public:
         
         Screen screen;
         screen.nPlatforms = nPlatforms;
-        screen.StartPosition = StartPos;
+        screen.StartPosition = SDLBox2D(StartPos);
         screen.Platforms = Box2DPlatforms.data();
         StageData.push_back(screen);
         
@@ -386,19 +389,23 @@ public:
         unsigned int nScreen = StageData.size();
 
         Stage.write((char*)&nScreen, sizeof(unsigned int));
-        for (int i = 0; i < StageData.size(); i++)
+        for (unsigned int i = 0; i < StageData.size(); i++)
         {
-            Stage.write((char*)&StageData[i].StartPosition, sizeof(Vector2D));
+            Stage.write((char*)&StageData[i].StartPosition.x, sizeof(float));
+            Stage.write((char*)&StageData[i].StartPosition.y, sizeof(float));
             Stage.write((char*)&StageData[i].nPlatforms, sizeof(unsigned int));
-            for (int j = 0; j < StageData[i].nPlatforms; j++)
+            for (unsigned int j = 0; j < StageData[i].nPlatforms; j++)
             {
                 Stage.write((char*)&StageData[i].Platforms[j].nVerteces, sizeof(unsigned int));
-                for(int l = 0; l < StageData[i].Platforms[j].nVerteces; l++)
-                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l], sizeof(Vector2D));
+                for(unsigned int l = 0; l < StageData[i].Platforms[j].nVerteces; l++)
+                {
+                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l].x, sizeof(float));
+                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l].y, sizeof(float));
+                }
+                    
                 Stage.write((char*)&StageData[i].Platforms[j].Type, sizeof(unsigned int));
                 Stage.write((char*)&StageData[i].Platforms[j].Mat, sizeof(unsigned int));
             }
-            
         }
    
         Stage.close();
@@ -407,62 +414,48 @@ public:
         if (Stage.good())
             std::cout << "Level data exported succesfully" << '\n';
     }
-
-/*
-    Vector2D StartPosition;
-    Box2DPlatform* Platforms;
-    unsigned int nPlatforms;
-
-    Vector2D* Verteces;
-    unsigned int nVerteces;
-    unsigned int Type;
-    unsigned int Mat;
-
-    Vector2D Vectors!
-*/
  
     void ExportToFileTest()
     {
         std::fstream Stage;
         Stage.open("Level_1.bin", std::ios::in | std::ios::binary);
 
-        unsigned int N;
-        Stage.read((char*)&N, sizeof(unsigned int));
-        std::cout << N <<'\n';
-        Screen* ImportedScreens = new Screen[N];
+        unsigned int nScreens;
+        Stage.read((char*)&nScreens, sizeof(unsigned int));
+        std::cout << nScreens <<'\n';
+        Screen* ImportedScreens = new Screen[nScreens];
 
-        for (int i = 0; i < N; i++)
+        for (unsigned int i = 0; i < nScreens; i++)
         {
-            Stage.read((char*)&ImportedScreens[i].StartPosition, sizeof(Vector2D));
+            Stage.read((char*)&ImportedScreens[i].StartPosition.x, sizeof(float));
+            Stage.read((char*)&ImportedScreens[i].StartPosition.y, sizeof(float));
             std::cout << ImportedScreens[i].StartPosition.x << " | " << ImportedScreens[i].StartPosition.y << '\n';
             Stage.read((char*)&ImportedScreens[i].nPlatforms, sizeof(unsigned int));
             std::cout << ImportedScreens[i].nPlatforms << '\n';
             
-            for (int j = 0; j < ImportedScreens[i].nPlatforms; j++)
+            ImportedScreens[i].Platforms = new Box2DPlatform[ImportedScreens[i].nPlatforms];
+            
+            for (unsigned int j = 0; j < ImportedScreens[i].nPlatforms; j++)
             {
-                Stage.read((char*)&ImportedScreens[i].Platforms[j].nVerteces, sizeof(unsigned int)); //out of bounds
-                for (int l = 0; l < ImportedScreens[i].Platforms[j].nVerteces; l++)
-                    Stage.read((char*)&ImportedScreens[i].Platforms[j].Verteces[l], sizeof(Vector2D));
+                Stage.read((char*)&ImportedScreens[i].Platforms[j].nVerteces, sizeof(unsigned int));
+                std::cout << *(unsigned int*)(char*)&ImportedScreens[i].Platforms[j].nVerteces << '\n';
+                ImportedScreens[i].Platforms[j].Verteces = new Vector2D[ImportedScreens[i].Platforms[j].nVerteces];
+
+                for (unsigned int l = 0; l < ImportedScreens[i].Platforms[j].nVerteces; l++)
+                {
+                    Stage.read((char*)&ImportedScreens[i].Platforms[j].Verteces[l].x, sizeof(float));
+                    Stage.read((char*)&ImportedScreens[i].Platforms[j].Verteces[l].y, sizeof(float));
+                    std::cout << *(float*)(char*)&ImportedScreens[i].Platforms[j].Verteces[l].x << " | " <<
+                    *(float*)(char*)&ImportedScreens[i].Platforms[j].Verteces[l].y << '\n';
+                }
+                    
                 Stage.read((char*)&ImportedScreens[i].Platforms[j].Type, sizeof(unsigned int));
+                std::cout << *(unsigned int*)(char*)&ImportedScreens[i].Platforms[j].Type << '\n';
                 Stage.read((char*)&ImportedScreens[i].Platforms[j].Mat, sizeof(unsigned int));
+                std::cout << *(unsigned int*)(char*)&ImportedScreens[i].Platforms[j].Mat << '\n';
             }
         }        
-
-        for (int i = 0; i < N; i++)
-        {
-            std::cout << ImportedScreens[i].StartPosition.x << " | " << ImportedScreens[i].StartPosition.y << '\n';
-            std::cout << ImportedScreens[i].nPlatforms << '\n';
-
-            for (int j = 0; j < ImportedScreens[i].nPlatforms; j++)
-            {
-                std::cout << ImportedScreens[i].Platforms[j].nVerteces << '\n';
-                for (int l = 0; l < ImportedScreens[i].Platforms[j].nVerteces; l++)
-                    std::cout << ImportedScreens[i].Platforms[j].Verteces[l].x << " | " << ImportedScreens[i].Platforms[j].Verteces[j].y << '\n';
-                std::cout << ImportedScreens[i].Platforms[j].Type << '\n';
-                std::cout << ImportedScreens[i].Platforms[j].Mat << '\n';
-            }
-        }
-    
+        
         Stage.close();
     }
 
