@@ -12,6 +12,7 @@
 #include <algorithm>
 //vendor
 #include <SDL_prims.h>
+#include "Level_editor.h"
 
 
 template <typename T> int sgn(T val) {
@@ -191,6 +192,21 @@ public:
             return false;
     }
 
+    void Move(const Vector2Di& amount)
+    {
+        for (int i = 0; i < SDLVerteces.size(); i++)
+        {
+            SDLVerteces[i].x += amount.x;
+            SDLVerteces[i].y += amount.y;
+        }
+
+        for (int i = 0; i < SDLVerteces.size(); ++i)
+        {
+            if (SDLVerteces[i].x < StartPos.x || SDLVerteces[i].y < StartPos.y)
+                StartPos = Vector2Di(SDLVerteces[i].x, SDLVerteces[i].y);
+        }
+    }
+
     void Select()
     {
         Selected = true;
@@ -284,6 +300,9 @@ struct Screen
     Box2DPlatform* Platforms;
     //Track Music;
     //Background Background;
+
+    Screen()
+        : StartPosition({0, 0}), nPlatforms(0), Platforms(nullptr) {}
 };
 
 class Stage
@@ -295,6 +314,9 @@ public:
     std::vector<Screen> StageData;
     Vector2Di StartPosition;
     unsigned int ScreensExported = 0;
+
+    Stage()
+        : StartPosition({0}) {}
 
     void AddPlatform(const Platform& platform)
     {
@@ -358,8 +380,7 @@ public:
     void ExportScreen()
     {
         std::cout << "Exporting Level Geometry..." << '\n';
-        
-        Vector2D StartPos = {StartPosition.x, StartPosition.y};
+        Vector2D StartPos = Vector2D(StartPosition.x, StartPosition.y);
         const unsigned int nPlatforms = Platforms.size();
         for (int i = 0; i < nPlatforms; i++)
         {
@@ -368,6 +389,7 @@ public:
         
         Screen screen;
         screen.nPlatforms = nPlatforms;
+        
         screen.StartPosition = SDLBox2D(StartPos);
         screen.Platforms = Box2DPlatforms.data();
         StageData.push_back(screen);
@@ -377,7 +399,7 @@ public:
         StartPosition = {0};
     }
 
-    void ExportToFile()
+    void ExportToFile() //TO DEBUG: Exporting multiple screens with anchors causes access violation!
     {
         static int Level = 0;
         ++Level;
@@ -399,7 +421,7 @@ public:
                 Stage.write((char*)&StageData[i].Platforms[j].nVerteces, sizeof(unsigned int));
                 for(unsigned int l = 0; l < StageData[i].Platforms[j].nVerteces; l++)
                 {
-                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l].x, sizeof(float));
+                    Stage.write((char*)&StageData[i].Platforms[j].Verteces[l].x, sizeof(float)); //nullptr 
                     Stage.write((char*)&StageData[i].Platforms[j].Verteces[l].y, sizeof(float));
                 }
                     
@@ -505,7 +527,7 @@ int main()
     SDL_Event e;
     bool quit = 0;
     const uint8_t* Keyboard = SDL_GetKeyboardState(0);
-    
+            
     TTF_Font* MonoFont = TTF_OpenFont("../../res/FreeMono.ttf", 15);
     if (!MonoFont)
         std::cout << "[SDL_ttf] TTF_OpenFont() failed   : " << TTF_GetError() << '\n';
@@ -514,6 +536,7 @@ int main()
     {
         if (e.type == SDL_QUIT)
             quit = true;
+
         else if (e.type == SDL_KEYDOWN)
         {
             Keyboard = SDL_GetKeyboardState(0);
@@ -607,7 +630,38 @@ int main()
             stage.ExportToFileTest();
         }
             
-            
+           else if (Keyboard[SDL_SCANCODE_RIGHT])
+        {
+            for (int i = 0; i < stage.Platforms.size(); i++)
+            {
+                if(!stage.Platforms.empty() && stage.Platforms[i].isSelected())
+                    stage.Platforms[i].Move(Vector2Di(4, 0));
+            }
+        }
+        if (Keyboard[SDL_SCANCODE_LEFT])
+        {
+            for (int i = 0; i < stage.Platforms.size(); i++)
+            {
+                if(!stage.Platforms.empty() && stage.Platforms[i].isSelected())
+                    stage.Platforms[i].Move(Vector2Di(-4, 0));
+            }
+        }
+        if (Keyboard[SDL_SCANCODE_UP])
+        {
+            for (int i = 0; i < stage.Platforms.size(); i++)
+            {
+                if(!stage.Platforms.empty() && stage.Platforms[i].isSelected())
+                    stage.Platforms[i].Move(Vector2Di(0, -4));
+            }
+        }
+        if (Keyboard[SDL_SCANCODE_DOWN])
+        {
+            for (int i = 0; i < stage.Platforms.size(); i++)
+            {
+                if(!stage.Platforms.empty() && stage.Platforms[i].isSelected())
+                    stage.Platforms[i].Move(Vector2Di(0, 4));
+            }
+        }    
 
         SDL_SetRenderDrawColor(Renderer, 25, 25, 25, 255);
         SDL_RenderClear(Renderer);
@@ -620,8 +674,9 @@ int main()
 
         info << "Screens exported: " << stage.GetScreensExported();
         RenderText(Renderer, "not_yet Level Editor", {10, 10}, MonoFont, SDL_Color(255, 255, 255, 150));
-        RenderText(Renderer, info.str().c_str(), {10, 22}, MonoFont, SDL_Color(255, 255, 255, 150));
-        //RenderText(Renderer, , {10, 20}, MonoFont, SDL_Color(255, 255, 255, 150));
+        RenderText(Renderer, "by memcpy", {10, 22}, MonoFont, SDL_Color(255, 255, 255, 150));
+        RenderText(Renderer, info.str().c_str(), {10, 34}, MonoFont, SDL_Color(255, 255, 255, 150));
+        
         
         stage.RenderPlatforms(Renderer);
         stage.RenderEdges(Renderer);
